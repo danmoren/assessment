@@ -1,0 +1,70 @@
+services:
+  assessment-be:
+    build:
+      context: .
+      dockerfile: DockerfileBE
+    ports:
+      - "8080:8080"
+      - "5005:5005"
+    environment:
+      - "JAVA_TOOL_OPTIONS=-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005" #IntelliJ Remote debugging to container
+    healthcheck:
+      test: "wget -T5 -qO- http://localhost:8080/actuator/health | grep UP || exit 1"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    depends_on:
+      assessment-db:
+        condition: service_healthy
+
+  assessment-db:
+    build:
+      context: .
+      dockerfile: DockerfileDB
+    environment:
+      POSTGRES_USER: postgres
+      PGUSER: postgres
+      POSTGRES_PASSWORD: 4ss3ssm3nt
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready", "-d", "assessment_db", "-U", "postgres" ]
+      interval: 15s
+      timeout: 30s
+      retries: 5
+      start_period: 30s
+    ports:
+      - "5434:5432"
+
+  assessment-prometheus:
+    build:
+      context: .
+      dockerfile: DockerfilePrometheus
+    healthcheck:
+      test: [ "CMD", "wget", "http://localhost:9090" ]
+      interval: 10s
+      timeout: 15s
+      retries: 10
+      start_period: 40s
+    depends_on:
+      assessment-be:
+        condition: service_healthy
+    ports:
+      - "9090:9090"
+
+  assessment-grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    depends_on:
+      assessment-prometheus:
+        condition: service_healthy
+    volumes:
+      - grafana-storage:/var/lib/grafana
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+
+volumes:
+  grafana-storage:
